@@ -24,39 +24,92 @@ class RAGEngine {
      */
     async retrieveRelevantChunks(query, setId = null, limit = 5) {
         try {
-            // validateApiKey(); // Not needed for Gemini
-            const filter = setId ? { set_id: setId } : null;
-            const searchResults = await vectorStore.hybridSearch(query, limit, filter);
-            const enrichedResults = await Promise.all(
-                searchResults.map(async result => {
-                    return new Promise((resolve, reject) => {
-                        db.get(
-                            `SELECT c.*, d.filename, s.name as set_name
-                             FROM chunks c
-                             JOIN documents d ON c.document_id = d.id
-                             JOIN sets s ON c.set_id = s.id
-                             WHERE c.id = ?`,
-                            [result.id],
-                            (err, row) => {
-                                if (err) reject(err);
-                                else {
-                                    resolve({
-                                        content: result.document,
-                                        source: row ? row.filename : 'Unknown',
-                                        set_name: row ? row.set_name : 'Unknown',
-                                        chunk_id: result.id,
-                                        relevance_score: result.hybridScore,
-                                        semantic_score: result.similarity,
-                                        keyword_score: result.keywordScore,
-                                        citation: row ? `${row.filename} (Chunk ${row.chunk_index})` : 'Unknown'
-                                    });
-                                }
-                            }
-                        );
+            // Try semantic search first with embeddings
+            try {
+                const { generateEmbedding, cosineSimilarity } = require('../utils/embeddings');
+                
+                // Generate embedding for the query
+                const queryEmbedding = await generateEmbedding(query);
+                
+                // Get all chunks with embeddings from database
+                const sql = setId
+                    ? `SELECT c.*, d.filename, s.name as set_name, c.embedding
+                       FROM chunks c
+                       JOIN documents d ON c.document_id = d.id
+                       JOIN sets s ON c.set_id = s.id
+                       WHERE c.set_id = ? AND c.embedding IS NOT NULL`
+                    : `SELECT c.*, d.filename, s.name as set_name, c.embedding
+                       FROM chunks c
+                       JOIN documents d ON c.document_id = d.id
+                       JOIN sets s ON c.set_id = s.id
+                       WHERE c.embedding IS NOT NULL`;
+                
+                const params = setId ? [setId] : [];
+                
+                const chunks = await new Promise((resolve, reject) => {
+                    db.all(sql, params, (err, rows) => {
+                        if (err) reject(err);
+                        else resolve(rows);
                     });
-                })
-            );
-            return { query, results: enrichedResults, total_found: enrichedResults.length, search_type: 'semantic_hybrid' };
+                });
+                
+                if (chunks.length === 0) {
+                    throw new Error('No embedded chunks found');
+                }
+                
+                // Calculate similarity scores
+                const results = chunks.map(chunk => {
+                    const chunkEmbedding = JSON.parse(chunk.embedding);
+                    const similarity = cosineSimilarity(queryEmbedding, chunkEmbedding);
+                    return {
+                        content: chunk.content,
+                        source: chunk.filename,
+                        set_name: chunk.set_name,
+                        chunk_id: chunk.id,
+                        relevance_score: similarity,
+                        semantic_score: similarity,
+                        keyword_score: 0,
+                        citation: `${chunk.filename} (Chunk ${chunk.chunk_index})`,
+                        similarity
+                    };
+                });
+                
+                // Sort by similarity and take top results
+                results.sort((a, b) => b.similarity - a.similarity);
+                const topResults = results.slice(0, limit);
+                
+                // Check if top result meets minimum similarity threshold
+                // Lower threshold = more lenient matching (show more results)
+                const SIMILARITY_THRESHOLD = 0.3; // 30% similarity required (was 0.5)
+                const maxSimilarity = topResults.length > 0 ? topResults[0].similarity : 0;
+                const hasRelevantResults = topResults.length > 0 && maxSimilarity >= SIMILARITY_THRESHOLD;
+                
+                // Log similarity scores for debugging
+                console.log(`[RAG] Query: "${query}"`);
+                console.log(`[RAG] Top 5 similarities:`, topResults.slice(0, 5).map(r => r.similarity.toFixed(3)));
+                console.log(`[RAG] Max similarity: ${maxSimilarity.toFixed(3)}, Threshold: ${SIMILARITY_THRESHOLD}`);
+                if (!hasRelevantResults) {
+                    console.log(`[RAG] ❌ No results above threshold - returning empty`);
+                } else {
+                    console.log(`[RAG] ✅ Found ${topResults.length} relevant results`);
+                    topResults.forEach((r, i) => {
+                        console.log(`  ${i+1}. [${r.similarity.toFixed(3)}] ${r.citation}: ${r.content.substring(0, 80)}...`);
+                    });
+                }
+                
+                return { 
+                    query, 
+                    results: hasRelevantResults ? topResults : [], 
+                    total_found: hasRelevantResults ? topResults.length : 0, 
+                    search_type: 'semantic_embeddings',
+                    max_similarity: maxSimilarity
+                };
+                
+            } catch (embeddingError) {
+                console.error('Semantic search failed:', embeddingError.message);
+                console.log('Falling back to keyword search...');
+                return this.keywordSearchFallback(query, setId, limit);
+            }
         } catch (error) {
             console.error('Error retrieving chunks:', error);
             console.log('Falling back to keyword search...');
@@ -151,6 +204,53 @@ class RAGEngine {
         if (results.length === 0) return 0;
         const avgScore = results.reduce((sum, r) => sum + r.relevance_score, 0) / results.length;
         return Math.min(avgScore, 1);
+    }
+
+    /**
+     * Get all headlines from recent sets with documents
+     * @param {number} limit - Number of headlines
+     * @returns {Promise<Array>} - Headlines from all sets
+     */
+    async getAllHeadlines(limit = 10) {
+        try {
+            // Get all sets with documents
+            const sets = await new Promise((resolve, reject) => {
+                db.all(
+                    `SELECT DISTINCT s.id, s.name, s.subject, s.created_at
+                     FROM sets s
+                     JOIN documents d ON s.id = d.set_id
+                     JOIN chunks c ON d.id = c.document_id
+                     ORDER BY s.created_at DESC
+                     LIMIT 5`,
+                    [],
+                    (err, rows) => {
+                        if (err) reject(err);
+                        else resolve(rows);
+                    }
+                );
+            });
+
+            if (sets.length === 0) return [];
+
+            // Generate 2-3 headlines per set
+            const allHeadlines = [];
+            const headlinesPerSet = Math.ceil(limit / sets.length);
+
+            for (const set of sets) {
+                const setHeadlines = await this.generateHeadlines(set.id, headlinesPerSet);
+                allHeadlines.push(...setHeadlines.map(h => ({
+                    ...h,
+                    set_id: set.id,
+                    created_at: new Date().toISOString()
+                })));
+            }
+
+            // Return limited number of headlines
+            return allHeadlines.slice(0, limit);
+        } catch (error) {
+            console.error('Error getting all headlines:', error);
+            return [];
+        }
     }
 
     /**

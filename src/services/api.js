@@ -41,6 +41,8 @@ export const ragAPI = {
 
     getConnections: (setId) => api.get(`/rag/connections/${setId}`),
 
+    getAllHeadlines: (limit = 10) => api.get(`/rag/headlines?limit=${limit}`),
+
     generateHeadlines: (setId, limit = 5) =>
         api.post(`/rag/headlines/${setId}`, { limit }),
 
@@ -51,6 +53,15 @@ export const ragAPI = {
 export const searchAPI = {
     search: (query, limit = 10) => api.post('/search', { query, limit }),
     getRelated: (setId) => api.get(`/search/related/${setId}`),
+};
+
+// Progress API
+export const progressAPI = {
+    getOverview: () => api.get('/progress/overview'),
+    getGapAnalysis: (setId) => api.get(`/progress/gap-analysis/${setId}`),
+    logSession: (data) => api.post('/progress/session', data),
+    logQuiz: (data) => api.post('/progress/quiz', data),
+    logInteraction: (data) => api.post('/progress/interaction', data),
 };
 
 // Health check

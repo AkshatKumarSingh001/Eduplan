@@ -17,10 +17,26 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Floating Icon Animation */
+@keyframes floatIcon {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-20px) rotate(5deg);
+  }
+  50% {
+    transform: translateY(-40px) rotate(-5deg);
+  }
+  75% {
+    transform: translateY(-20px) rotate(5deg);
+  }
+}
+
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
+  width: 100%;
+  height: 100%;
 }

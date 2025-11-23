@@ -49,12 +49,14 @@ const setsRoutes = require('./routes/sets');
 const documentsRoutes = require('./routes/documents');
 const ragRoutes = require('./routes/rag');
 const searchRoutes = require('./routes/search');
+const progressRoutes = require('./routes/progress');
 
 // Use routes
 app.use('/api/sets', setsRoutes);
 app.use('/api/documents', documentsRoutes);
 app.use('/api/rag', ragRoutes);
 app.use('/api/search', searchRoutes);
+app.use('/api/progress', progressRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

@@ -7,34 +7,21 @@ const knowledgeGraph = require('../services/knowledgeGraph');
 // Query documents with AI-generated answer (Content Finder)
 router.post('/query', async (req, res) => {
     try {
-        const { query, setId, limit = 5 } = req.body;
-
+        const { query, setId } = req.body;
         if (!query) {
             return res.status(400).json({ error: 'Query is required' });
         }
 
-        // Use generateAnswer for AI-powered responses
+        // AI-generated answer
         const answer = await ragEngine.generateAnswer(query, setId);
         res.json(answer);
-    } catch (error) {
-        console.error('Query error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Search documents only (no AI answer)
-router.post('/search', async (req, res) => {
-    try {
-        const { query, setId, limit = 5 } = req.body;
-
-        if (!query) {
-            return res.status(400).json({ error: 'Query is required' });
-        }
-
-        const results = await ragEngine.retrieveRelevantChunks(query, setId, limit);
-        res.json(results);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+    } catch (err) {
+        console.error('RAG query error:', err);
+        // Send a more structured error response
+        res.status(500).json({ 
+            error: 'Failed to generate AI answer.',
+            details: err.message 
+        });
     }
 });
 
@@ -59,6 +46,18 @@ router.get('/connections/:setId', async (req, res) => {
         const connections = await knowledgeGraph.getSetConnections(setId);
         res.json(connections);
     } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get all headlines from recent sets
+router.get('/headlines', async (req, res) => {
+    try {
+        const { limit = 10 } = req.query;
+        const headlines = await ragEngine.getAllHeadlines(parseInt(limit));
+        res.json(headlines);
+    } catch (error) {
+        console.error('Error fetching headlines:', error);
         res.status(500).json({ error: error.message });
     }
 });

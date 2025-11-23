@@ -47,6 +47,38 @@ export const RAGProvider = ({ children }) => {
         }
     };
 
+    // Update existing set
+    const updateSet = async (id, setData) => {
+        try {
+            setLoading(true);
+            const response = await setsAPI.update(id, setData);
+            await loadSets(); // Reload sets
+            return response.data;
+        } catch (err) {
+            setError(err.message);
+            throw err;
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Delete set
+    const deleteSet = async (id) => {
+        try {
+            setLoading(true);
+            await setsAPI.delete(id);
+            await loadSets(); // Reload sets
+            if (currentSet === id) {
+                setCurrentSet(null);
+            }
+        } catch (err) {
+            setError(err.message);
+            throw err;
+        } finally {
+            setLoading(false);
+        }
+    };
+
     // Upload document to set
     const uploadDocument = async (setId, file) => {
         try {
@@ -135,6 +167,8 @@ export const RAGProvider = ({ children }) => {
         error,
         loadSets,
         createSet,
+        updateSet,
+        deleteSet,
         uploadDocument,
         queryDocuments,
         generateStudyPlan,

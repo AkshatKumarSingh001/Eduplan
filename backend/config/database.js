@@ -102,6 +102,48 @@ function initializeDatabase() {
       )
     `);
 
+        // Study sessions table - track when user studies each set
+        db.run(`
+      CREATE TABLE IF NOT EXISTS study_sessions (
+        id TEXT PRIMARY KEY,
+        set_id TEXT NOT NULL,
+        duration_minutes INTEGER NOT NULL,
+        activities TEXT,
+        notes TEXT,
+        session_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (set_id) REFERENCES sets(id) ON DELETE CASCADE
+      )
+    `);
+
+        // Quiz results table - track quiz/assessment performance
+        db.run(`
+      CREATE TABLE IF NOT EXISTS quiz_results (
+        id TEXT PRIMARY KEY,
+        set_id TEXT NOT NULL,
+        topic TEXT,
+        score REAL NOT NULL,
+        total_questions INTEGER,
+        correct_answers INTEGER,
+        time_taken_minutes INTEGER,
+        weak_areas TEXT,
+        completed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (set_id) REFERENCES sets(id) ON DELETE CASCADE
+      )
+    `);
+
+        // User interactions table - track queries and document interactions
+        db.run(`
+      CREATE TABLE IF NOT EXISTS user_interactions (
+        id TEXT PRIMARY KEY,
+        set_id TEXT,
+        interaction_type TEXT NOT NULL,
+        query TEXT,
+        result_quality REAL,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (set_id) REFERENCES sets(id) ON DELETE SET NULL
+      )
+    `);
+
         console.log('✅ Database tables initialized');
     });
 }

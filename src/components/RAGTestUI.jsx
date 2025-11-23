@@ -1,13 +1,16 @@
 // Force rebuild after UI changes
 
+import React, { useState } from 'react';
 import { useRAG } from '../contexts/RAGContext';
 import DocumentUpload from './DocumentUpload';
-import { Search, BookOpen, Loader, CheckCircle, AlertCircle, FileText, Brain } from 'lucide-react';
+import { Search, BookOpen, Loader, CheckCircle, AlertCircle, FileText, Brain, Trash2, Edit2, Save, X } from 'lucide-react';
 
 const RAGTestUI = () => {
     const {
         sets,
         createSet,
+        updateSet,
+        deleteSet,
         queryDocuments,
         generateStudyPlan,
         loading
@@ -25,6 +28,8 @@ const RAGTestUI = () => {
     const [queryResults, setQueryResults] = useState(null);
     const [studyPlan, setStudyPlan] = useState(null);
     const [status, setStatus] = useState(null);
+    const [editingSet, setEditingSet] = useState(null);
+    const [editForm, setEditForm] = useState({});
 
     const handleCreateSet = async (e) => {
         e.preventDefault();
@@ -41,20 +46,26 @@ const RAGTestUI = () => {
 
     const handleQuery = async (e) => {
         e.preventDefault();
+        if (!query) {
+            setStatus({ type: 'error', message: 'Please enter a query.' });
+            return;
+        }
         try {
             setStatus({ type: 'loading', message: 'Searching documents...' });
+            setQueryResults(null); // Clear previous results
             const results = await queryDocuments(query, selectedSet);
             setQueryResults(results);
-            // Determine appropriate success message based on response shape
+
             if (results && results.answer) {
-                setStatus({ type: 'success', message: 'Answer generated' });
-            } else if (results && results.results) {
-                setStatus({ type: 'success', message: `Found ${results.results.length} results` });
+                setStatus({ type: 'success', message: 'AI answer generated successfully!' });
+            } else if (results && results.results && results.results.length > 0) {
+                setStatus({ type: 'success', message: `Found ${results.results.length} relevant document chunks.` });
             } else {
-                setStatus({ type: 'success', message: 'No results found' });
+                setStatus({ type: 'success', message: 'No direct results found, but the AI may still provide an answer.' });
             }
         } catch (error) {
-            setStatus({ type: 'error', message: error.message });
+            console.error("Frontend query error:", error);
+            setStatus({ type: 'error', message: `Search failed: ${error.message}` });
             setQueryResults(null);
         }
     };
@@ -75,15 +86,60 @@ const RAGTestUI = () => {
         }
     };
 
+    const handleEditSet = (set) => {
+        setEditingSet(set.id);
+        setEditForm({
+            name: set.name,
+            subject: set.subject,
+            grade: set.grade,
+            difficulty: set.difficulty
+        });
+    };
+
+    const handleSaveEdit = async (setId) => {
+        try {
+            setStatus({ type: 'loading', message: 'Updating set...' });
+            await updateSet(setId, editForm);
+            setEditingSet(null);
+            setEditForm({});
+            setStatus({ type: 'success', message: 'Set updated successfully!' });
+            setTimeout(() => setStatus(null), 3000);
+        } catch (error) {
+            setStatus({ type: 'error', message: error.message });
+        }
+    };
+
+    const handleCancelEdit = () => {
+        setEditingSet(null);
+        setEditForm({});
+    };
+
+    const handleDeleteSet = async (setId) => {
+        if (!confirm('Are you sure you want to delete this set? This will also delete all associated documents and data.')) {
+            return;
+        }
+        try {
+            setStatus({ type: 'loading', message: 'Deleting set...' });
+            await deleteSet(setId);
+            if (selectedSet === setId) {
+                setSelectedSet(null);
+            }
+            setStatus({ type: 'success', message: 'Set deleted successfully!' });
+            setTimeout(() => setStatus(null), 3000);
+        } catch (error) {
+            setStatus({ type: 'error', message: error.message });
+        }
+    };
+
     return (
         <div className="h-full w-full p-8 overflow-y-auto bg-slate-950">
             <div className="w-full space-y-6">
                 {/* Header */}
                 <div className="mb-8">
                     <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                        RAG System Test UI
+                        Brainstorm
                     </h1>
-                    <p className="text-slate-400">Test document upload, retrieval, and AI features</p>
+                    <p className="text-slate-400">Upload documents, query knowledge, and generate study plans with AI</p>
                 </div>
 
                 {/* Status Message */}
@@ -130,7 +186,7 @@ const RAGTestUI = () => {
                 <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6">
                     {/* Create Set Tab */}
                     {activeTab === 'create' && (
-                        <div>
+                        <div className="w-full">
                             <h2 className="text-2xl font-bold mb-4">Create New Set</h2>
                             <form onSubmit={handleCreateSet} className="space-y-4">
                                 <div>
@@ -195,24 +251,99 @@ const RAGTestUI = () => {
                                         {sets.map(set => (
                                             <div
                                                 key={set.id}
-                                                onClick={() => setSelectedSet(set.id)}
-                                                className={`p-4 rounded-lg border cursor-pointer transition-all ${selectedSet === set.id
+                                                className={`p-4 rounded-lg border transition-all ${selectedSet === set.id
                                                     ? 'bg-blue-500/20 border-blue-500'
                                                     : 'bg-slate-800/50 border-slate-700 hover:border-slate-600'
                                                     }`}
                                             >
-                                                <div className="flex justify-between items-start">
-                                                    <div>
-                                                        <h4 className="font-semibold">{set.name}</h4>
-                                                        <p className="text-sm text-slate-400">{set.subject} • Grade {set.grade}</p>
+                                                {editingSet === set.id ? (
+                                                    /* Edit Mode */
+                                                    <div className="space-y-3">
+                                                        <input
+                                                            type="text"
+                                                            value={editForm.name}
+                                                            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                                                            className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                                                            placeholder="Set Name"
+                                                        />
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <input
+                                                                type="text"
+                                                                value={editForm.subject}
+                                                                onChange={(e) => setEditForm({ ...editForm, subject: e.target.value })}
+                                                                className="px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                                                                placeholder="Subject"
+                                                            />
+                                                            <input
+                                                                type="text"
+                                                                value={editForm.grade}
+                                                                onChange={(e) => setEditForm({ ...editForm, grade: e.target.value })}
+                                                                className="px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                                                                placeholder="Grade"
+                                                            />
+                                                        </div>
+                                                        <select
+                                                            value={editForm.difficulty}
+                                                            onChange={(e) => setEditForm({ ...editForm, difficulty: e.target.value })}
+                                                            className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                                                        >
+                                                            <option value="easy">Easy</option>
+                                                            <option value="medium">Medium</option>
+                                                            <option value="hard">Hard</option>
+                                                        </select>
+                                                        <div className="flex gap-2">
+                                                            <button
+                                                                onClick={() => handleSaveEdit(set.id)}
+                                                                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-green-500 hover:bg-green-600 rounded text-sm font-medium transition-colors"
+                                                            >
+                                                                <Save size={16} />
+                                                                Save
+                                                            </button>
+                                                            <button
+                                                                onClick={handleCancelEdit}
+                                                                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-slate-600 hover:bg-slate-700 rounded text-sm font-medium transition-colors"
+                                                            >
+                                                                <X size={16} />
+                                                                Cancel
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                    <span className={`px-2 py-1 rounded text-xs ${set.difficulty === 'easy' ? 'bg-green-500/20 text-green-300' :
-                                                        set.difficulty === 'medium' ? 'bg-yellow-500/20 text-yellow-300' :
-                                                            'bg-red-500/20 text-red-300'
-                                                        }`}>
-                                                        {set.difficulty}
-                                                    </span>
-                                                </div>
+                                                ) : (
+                                                    /* View Mode */
+                                                    <div>
+                                                        <div className="flex justify-between items-start mb-3">
+                                                            <div
+                                                                onClick={() => setSelectedSet(set.id)}
+                                                                className="flex-1 cursor-pointer"
+                                                            >
+                                                                <h4 className="font-semibold">{set.name}</h4>
+                                                                <p className="text-sm text-slate-400">{set.subject} • Grade {set.grade}</p>
+                                                            </div>
+                                                            <span className={`px-2 py-1 rounded text-xs ${set.difficulty === 'easy' ? 'bg-green-500/20 text-green-300' :
+                                                                set.difficulty === 'medium' ? 'bg-yellow-500/20 text-yellow-300' :
+                                                                    'bg-red-500/20 text-red-300'
+                                                                }`}>
+                                                                {set.difficulty}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            <button
+                                                                onClick={() => handleEditSet(set)}
+                                                                className="flex items-center gap-1 px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded text-xs font-medium transition-colors"
+                                                            >
+                                                                <Edit2 size={14} />
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDeleteSet(set.id)}
+                                                                className="flex items-center gap-1 px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded text-xs font-medium transition-colors"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                                Delete
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
@@ -306,13 +437,32 @@ const RAGTestUI = () => {
                                                 {queryResults.sources.map((source, idx) => (
                                                     <div key={idx} className="p-4 bg-slate-800/50 border border-slate-700 rounded-lg">
                                                         <div className="flex justify-between items-start mb-2">
-                                                            <span className="text-sm text-blue-400">{source.citation}</span>
-                                                            <span className="text-xs text-slate-500">
-                                                                Relevance: {(source.relevance * 100).toFixed(0)}%
-                                                            </span>
+                                                            <span className="text-sm text-blue-400">{source.citation || `Source ${idx + 1}`}</span>
+                                                            {source.relevance && (
+                                                                <span className="text-xs text-slate-500">
+                                                                    Relevance: {(source.relevance * 100).toFixed(0)}%
+                                                                </span>
+                                                            )}
                                                         </div>
                                                         <div className="text-xs text-slate-500">
                                                             Source: {source.source}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Fallback for keyword search results */}
+                                    {queryResults.results && queryResults.results.length > 0 && !queryResults.answer && (
+                                        <div>
+                                            <h3 className="text-lg font-semibold mb-4">Keyword Search Results ({queryResults.results.length})</h3>
+                                            <div className="space-y-3">
+                                                {queryResults.results.map((result, idx) => (
+                                                    <div key={idx} className="p-4 bg-slate-800/50 border border-slate-700 rounded-lg">
+                                                        <p className="text-sm text-slate-300">{result.chunk}</p>
+                                                        <div className="text-xs text-slate-500 mt-2">
+                                                            Source: {result.document.filename}
                                                         </div>
                                                     </div>
                                                 ))}
@@ -326,7 +476,7 @@ const RAGTestUI = () => {
 
                     {/* Generate Plan Tab */}
                     {activeTab === 'plan' && (
-                        <div>
+                        <div className="w-full">
                             <h2 className="text-2xl font-bold mb-4">Generate Study Plan</h2>
                             {selectedSet ? (
                                 <div>

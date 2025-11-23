@@ -1,12 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine, Label, BarChart, Bar } from 'recharts';
-import { AlertTriangle, CheckCircle, Clock, TrendingUp, X, BookOpen, Target, Lightbulb } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, TrendingUp, X, BookOpen, Target, Lightbulb, Loader } from 'lucide-react';
+import { progressAPI } from '../services/api';
 
 const ProgressView = () => {
     const [selectedTopic, setSelectedTopic] = useState(null);
+    const [realData, setRealData] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [aiRecommendations, setAiRecommendations] = useState(null);
 
-    // Mock Data: Topics with Time Spent (hours) vs Proficiency (%)
-    const data = [
+    // Load real progress data on mount
+    useEffect(() => {
+        const loadData = async () => {
+            try {
+                const response = await progressAPI.getOverview();
+                if (response.data.data && response.data.data.length > 0) {
+                    setRealData(response.data.data);
+                    setAiRecommendations(response.data.recommendations);
+                }
+            } catch (error) {
+                console.error('Error loading progress data:', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadData();
+    }, []);
+
+    // Use real data if available, otherwise fall back to mock data
+    const mockData = [
         {
             topic: 'Calculus Integration',
             time: 12,
@@ -57,6 +79,8 @@ const ProgressView = () => {
             }
         },
     ];
+
+    const data = realData.length > 0 ? realData : mockData;
 
     const COLORS = {
         struggling: '#ef4444',
@@ -182,15 +206,24 @@ const ProgressView = () => {
                 <div className="bg-gradient-to-r from-blue-900/20 to-purple-900/20 border border-blue-500/20 rounded-2xl p-6">
                     <div className="flex items-start gap-4">
                         <div className="p-3 bg-blue-500/20 rounded-lg text-blue-400">
-                            <CheckCircle size={24} />
+                            <Lightbulb size={24} />
                         </div>
-                        <div>
-                            <h3 className="text-lg font-semibold text-white mb-1">AI Recommendation</h3>
-                            <p className="text-slate-300 text-sm leading-relaxed">
-                                Based on your graph, you are spending significant time on <strong>Organic Chemistry</strong> and <strong>Thermodynamics</strong> with suboptimal results.
-                                <br /><br />
-                                <strong>Suggestion:</strong> Switch from passive reading to active recall for these topics. The system has generated 3 new interactive "Sets" breaking these down into smaller, manageable chunks.
+                        <div className="flex-1">
+                            <h3 className="text-lg font-semibold text-white mb-2">
+                                {realData.length > 0 ? 'AI-Powered Recommendations' : 'AI Recommendation (Demo Mode)'}
+                            </h3>
+                            <p className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
+                                {aiRecommendations ? aiRecommendations.recommendation : 
+                                    'Based on your graph, you are spending significant time on Organic Chemistry and Thermodynamics with suboptimal results.\n\nSuggestion: Switch from passive reading to active recall for these topics. The system has generated 3 new interactive "Sets" breaking these down into smaller, manageable chunks.'
+                                }
                             </p>
+                            {realData.length === 0 && (
+                                <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                                    <p className="text-yellow-300 text-xs">
+                                        💡 This is demo data. Start tracking your study sessions and quiz results in the Brainstorm tab to see personalized AI recommendations!
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
