@@ -23,6 +23,12 @@ let collection = null;
  * @returns {Promise<void>}
  */
 async function initializeCollection() {
+    // Skip if client is not available
+    if (!client) {
+        console.warn('ChromaDB client not available, skipping collection initialization');
+        return;
+    }
+
     try {
         // Try to get existing collection
         collection = await client.getOrCreateCollection({
@@ -33,7 +39,8 @@ async function initializeCollection() {
         console.log(`ChromaDB collection "${COLLECTION_NAME}" initialized`);
     } catch (error) {
         console.error('Error initializing ChromaDB collection:', error);
-        throw error;
+        // Don't throw - just log the error and continue
+        collection = null;
     }
 }
 
@@ -45,6 +52,12 @@ async function initializeCollection() {
 async function addChunks(chunks) {
     if (!collection) {
         await initializeCollection();
+    }
+
+    // If still no collection, skip ChromaDB and just return
+    if (!collection) {
+        console.warn('ChromaDB not available, skipping addChunks');
+        return;
     }
 
     try {
@@ -68,7 +81,7 @@ async function addChunks(chunks) {
         console.log(`Added ${chunks.length} chunks to ChromaDB`);
     } catch (error) {
         console.error('Error adding chunks to ChromaDB:', error);
-        throw error;
+        // Don't throw - just log and continue
     }
 }
 
@@ -82,6 +95,12 @@ async function addChunks(chunks) {
 async function searchSimilar(query, topK = 10, filter = null) {
     if (!collection) {
         await initializeCollection();
+    }
+
+    // If still no collection, return empty array
+    if (!collection) {
+        console.warn('ChromaDB not available, returning empty results');
+        return [];
     }
 
     try {
@@ -112,7 +131,7 @@ async function searchSimilar(query, topK = 10, filter = null) {
         return formattedResults;
     } catch (error) {
         console.error('Error searching ChromaDB:', error);
-        throw error;
+        return []; // Return empty array instead of throwing
     }
 }
 

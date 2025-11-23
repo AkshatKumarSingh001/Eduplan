@@ -49,26 +49,43 @@ const ContentFinder = () => {
 
     const handleSearch = async (e) => {
         e.preventDefault();
-        if (!searchQuery.trim()) return;
+        if (!searchQuery.trim()) {
+            setSearchResults({ resources: [] });
+            return;
+        }
 
         try {
             setSearching(true);
+            setSearchResults(null); // Clear previous results
             console.log('Searching for:', searchQuery);
             
             // Use the internet search API instead of RAG
             const response = await searchAPI.search(searchQuery, 10);
-            console.log('Search response:', response.data);
+            console.log('Search response:', response);
+            console.log('Search response data:', response.data);
             
-            if (response.data && response.data.resources && response.data.resources.length > 0) {
-                setSearchResults(response.data);
+            if (response.data) {
+                // Handle different response formats
+                if (response.data.resources && Array.isArray(response.data.resources)) {
+                    setSearchResults(response.data);
+                    console.log('Found resources:', response.data.resources.length);
+                } else if (Array.isArray(response.data)) {
+                    // If data is directly an array of resources
+                    setSearchResults({ resources: response.data });
+                    console.log('Found resources (array format):', response.data.length);
+                } else {
+                    console.warn('Unexpected response format:', response.data);
+                    setSearchResults({ resources: [] });
+                }
             } else {
-                console.warn('No resources found in response');
+                console.warn('No data in response');
                 setSearchResults({ resources: [] });
             }
         } catch (error) {
             console.error('Search error:', error);
             console.error('Error details:', error.response?.data || error.message);
-            // Set empty results instead of null to show "no results" message
+            console.error('Full error:', error);
+            // Set empty results to show "no results" message
             setSearchResults({ resources: [] });
         } finally {
             setSearching(false);
@@ -79,24 +96,24 @@ const ContentFinder = () => {
     const displayContent = searchResults && searchResults.resources && searchResults.resources.length > 0
         ? searchResults.resources.map((resource, idx) => ({
             id: `resource-${idx}`,
-            title: resource.title,
-            type: resource.type,
-            source: resource.source,
-            duration: resource.duration,
-            rating: resource.rating,
+            title: resource.title || 'Untitled Resource',
+            type: resource.type || 'article',
+            source: resource.source || 'Unknown',
+            duration: resource.duration || 'N/A',
+            rating: resource.rating || 4.0,
             topic: searchQuery,
-            url: resource.url,
-            description: resource.description,
+            url: resource.url || '#',
+            description: resource.description || 'No description available.',
             difficulty: resource.difficulty
         }))
-        : mockContentItems.filter(item => {
+        : searchResults === null ? mockContentItems.filter(item => {
             const matchesSearch = searchQuery ? (
                 item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 item.topic.toLowerCase().includes(searchQuery.toLowerCase())
             ) : true;
             const matchesFilter = selectedFilter === 'all' || item.type === selectedFilter;
             return matchesSearch && matchesFilter;
-        });
+        }) : [];
 
     const getTypeColor = (type) => {
         const colors = {

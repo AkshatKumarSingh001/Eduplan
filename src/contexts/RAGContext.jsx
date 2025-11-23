@@ -36,12 +36,17 @@ export const RAGProvider = ({ children }) => {
     const createSet = async (setData) => {
         try {
             setLoading(true);
+            console.log('Creating set with data:', setData);
             const response = await setsAPI.create(setData);
+            console.log('Set created successfully:', response.data);
             await loadSets(); // Reload sets
             return response.data;
         } catch (err) {
-            setError(err.message);
-            throw err;
+            console.error('Error creating set:', err);
+            console.error('Error response:', err.response?.data);
+            const errorMessage = err.response?.data?.error || err.message || 'Failed to create set';
+            setError(errorMessage);
+            throw new Error(errorMessage);
         } finally {
             setLoading(false);
         }
@@ -157,6 +162,7 @@ export const RAGProvider = ({ children }) => {
     // Load sets on mount
     useEffect(() => {
         loadSets();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const value = {

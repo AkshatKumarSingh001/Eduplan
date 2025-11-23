@@ -21,7 +21,8 @@ const RAGTestUI = () => {
         name: '',
         subject: '',
         grade: '',
-        difficulty: 'medium'
+        difficulty: 'medium',
+        description: ''
     });
     const [selectedSet, setSelectedSet] = useState(null);
     const [query, setQuery] = useState('');
@@ -33,25 +34,43 @@ const RAGTestUI = () => {
 
     const handleCreateSet = async (e) => {
         e.preventDefault();
+        
+        // Validation
+        if (!newSet.name || !newSet.subject || !newSet.grade) {
+            setStatus({ type: 'error', message: 'Please fill in all required fields (Name, Subject, and Grade)' });
+            setTimeout(() => setStatus(null), 4000);
+            return;
+        }
+        
         try {
             setStatus({ type: 'loading', message: 'Creating set...' });
             const result = await createSet(newSet);
-            setStatus({ type: 'success', message: `Set "${result.name}" created successfully!` });
-            setNewSet({ name: '', subject: '', grade: '', difficulty: 'medium' });
-            setTimeout(() => setStatus(null), 3000);
+            setStatus({ type: 'success', message: `Set "${result.name}" created successfully! You can now upload documents.` });
+            setNewSet({ name: '', subject: '', grade: '', difficulty: 'medium', description: '' });
+            setTimeout(() => setStatus(null), 4000);
         } catch (error) {
-            setStatus({ type: 'error', message: error.message });
+            setStatus({ type: 'error', message: `Failed to create set: ${error.message || 'Unknown error'}` });
+            setTimeout(() => setStatus(null), 5000);
         }
     };
 
     const handleQuery = async (e) => {
         e.preventDefault();
-        if (!query) {
-            setStatus({ type: 'error', message: 'Please enter a query.' });
+        
+        if (!query || query.trim().length === 0) {
+            setStatus({ type: 'error', message: 'Please enter a question or query.' });
+            setTimeout(() => setStatus(null), 3000);
             return;
         }
+        
+        if (!selectedSet && (!sets || sets.length === 0)) {
+            setStatus({ type: 'error', message: 'Please create a set and upload documents first.' });
+            setTimeout(() => setStatus(null), 4000);
+            return;
+        }
+        
         try {
-            setStatus({ type: 'loading', message: 'Searching documents...' });
+            setStatus({ type: 'loading', message: 'Searching documents with AI...' });
             setQueryResults(null); // Clear previous results
             const results = await queryDocuments(query, selectedSet);
             setQueryResults(results);
@@ -61,28 +80,33 @@ const RAGTestUI = () => {
             } else if (results && results.results && results.results.length > 0) {
                 setStatus({ type: 'success', message: `Found ${results.results.length} relevant document chunks.` });
             } else {
-                setStatus({ type: 'success', message: 'No direct results found, but the AI may still provide an answer.' });
+                setStatus({ type: 'error', message: 'No results found. Try uploading documents or adjusting your query.' });
             }
+            setTimeout(() => setStatus(null), 4000);
         } catch (error) {
             console.error("Frontend query error:", error);
-            setStatus({ type: 'error', message: `Search failed: ${error.message}` });
+            setStatus({ type: 'error', message: `Search failed: ${error.response?.data?.error || error.message || 'Connection error. Is the backend running?'}` });
             setQueryResults(null);
+            setTimeout(() => setStatus(null), 5000);
         }
     };
 
     const handleGeneratePlan = async () => {
         if (!selectedSet) {
-            setStatus({ type: 'error', message: 'Please select a set first' });
+            setStatus({ type: 'error', message: 'Please select a set first to generate a study plan' });
+            setTimeout(() => setStatus(null), 3000);
             return;
         }
         try {
-            setStatus({ type: 'loading', message: 'Generating study plan...' });
+            setStatus({ type: 'loading', message: 'AI is generating your personalized study plan...' });
             const plan = await generateStudyPlan(selectedSet, 7, 2);
             setStudyPlan(plan);
-            setStatus({ type: 'success', message: 'Study plan generated!' });
+            setStatus({ type: 'success', message: 'Study plan generated successfully!' });
+            setTimeout(() => setStatus(null), 3000);
         } catch (error) {
-            setStatus({ type: 'error', message: error.message });
+            setStatus({ type: 'error', message: `Failed to generate plan: ${error.response?.data?.error || error.message || 'Unknown error'}` });
             setStudyPlan(null);
+            setTimeout(() => setStatus(null), 5000);
         }
     };
 
@@ -183,7 +207,7 @@ const RAGTestUI = () => {
                 </div>
 
                 {/* Tab Content */}
-                <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6">
+                <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6" data-tour="brainstorm-create">
                     {/* Create Set Tab */}
                     {activeTab === 'create' && (
                         <div className="w-full">
@@ -234,6 +258,18 @@ const RAGTestUI = () => {
                                         <option value="hard">Hard</option>
                                     </select>
                                 </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                                        Description <span className="text-slate-500 text-xs">(Optional)</span>
+                                    </label>
+                                    <textarea
+                                        value={newSet.description}
+                                        onChange={(e) => setNewSet({ ...newSet, description: e.target.value })}
+                                        className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                                        placeholder="Brief description of this study set..."
+                                        rows="3"
+                                    />
+                                </div>
                                 <button
                                     type="submit"
                                     disabled={loading}
@@ -244,7 +280,7 @@ const RAGTestUI = () => {
                             </form>
 
                             {/* Existing Sets */}
-                            {sets.length > 0 && (
+                            {sets.length > 0 ? (
                                 <div className="mt-8">
                                     <h3 className="text-lg font-semibold mb-4">Existing Sets ({sets.length})</h3>
                                     <div className="space-y-2">
@@ -348,6 +384,14 @@ const RAGTestUI = () => {
                                         ))}
                                     </div>
                                 </div>
+                            ) : (
+                                <div className="mt-8 p-6 bg-slate-800/30 border border-slate-700 rounded-lg text-center">
+                                    <BookOpen size={48} className="mx-auto text-slate-600 mb-3" />
+                                    <h3 className="text-lg font-semibold text-slate-300 mb-2">No Sets Yet</h3>
+                                    <p className="text-sm text-slate-400">
+                                        Create your first study set above to get started with uploading documents and asking questions.
+                                    </p>
+                                </div>
                             )}
                         </div>
                     )}
@@ -369,9 +413,22 @@ const RAGTestUI = () => {
                                     />
                                 </div>
                             ) : (
-                                <div className="text-center py-12">
+                                <div className="text-center py-12 bg-slate-800/30 border border-slate-700 rounded-lg">
                                     <FileText size={48} className="mx-auto text-slate-600 mb-4" />
-                                    <p className="text-slate-400">Please select a set first from the "Create Set" tab</p>
+                                    <h3 className="text-lg font-semibold text-slate-300 mb-2">No Set Selected</h3>
+                                    <p className="text-slate-400 mb-4">
+                                        {sets.length === 0 
+                                            ? 'Create a set first in the "Create Set" tab' 
+                                            : 'Select a set from the "Create Set" tab to upload documents'}
+                                    </p>
+                                    {sets.length === 0 && (
+                                        <button
+                                            onClick={() => setActiveTab('create')}
+                                            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 rounded-lg transition-colors"
+                                        >
+                                            Go to Create Set
+                                        </button>
+                                    )}
                                 </div>
                             )}
                         </div>

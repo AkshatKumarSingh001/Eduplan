@@ -3,7 +3,7 @@ import { BookOpen, Calendar, Edit3, Save, X } from 'lucide-react';
 
 const SetDetailView = ({ node, onClose }) => {
     const [isEditing, setIsEditing] = useState(false);
-    const [content, setContent] = useState(node.content || "No content available for this set yet. AI is generating study materials...");
+    const [content, setContent] = useState(node.description || "No content available for this set yet. Upload documents to generate study materials.");
 
     return (
         <div className="absolute top-20 right-4 bottom-4 w-[500px] bg-slate-900/90 backdrop-blur-xl border border-slate-700 rounded-2xl shadow-2xl flex flex-col overflow-hidden z-40 transition-all duration-300">
@@ -11,9 +11,27 @@ const SetDetailView = ({ node, onClose }) => {
             <div className="p-6 border-b border-slate-700 flex justify-between items-start bg-gradient-to-b from-slate-800/50 to-transparent">
                 <div>
                     <h2 className="text-2xl font-bold text-white mb-1">{node.name}</h2>
-                    <div className="flex gap-2 text-xs text-blue-300">
-                        <span className="px-2 py-1 bg-blue-500/20 rounded-full border border-blue-500/30">Study Set</span>
-                        <span className="px-2 py-1 bg-purple-500/20 rounded-full border border-purple-500/30">AI Optimized</span>
+                    <div className="flex flex-wrap gap-2 text-xs text-blue-300 mt-2">
+                        {node.subject && (
+                            <span className="px-2 py-1 bg-blue-500/20 rounded-full border border-blue-500/30">
+                                {node.subject}
+                            </span>
+                        )}
+                        {node.grade && (
+                            <span className="px-2 py-1 bg-purple-500/20 rounded-full border border-purple-500/30">
+                                Grade {node.grade}
+                            </span>
+                        )}
+                        {node.difficulty && (
+                            <span className="px-2 py-1 bg-amber-500/20 rounded-full border border-amber-500/30">
+                                {node.difficulty}
+                            </span>
+                        )}
+                        {node.documents && node.documents.length > 0 && (
+                            <span className="px-2 py-1 bg-emerald-500/20 rounded-full border border-emerald-500/30">
+                                {node.documents.length} {node.documents.length === 1 ? 'Document' : 'Documents'}
+                            </span>
+                        )}
                     </div>
                 </div>
                 <button

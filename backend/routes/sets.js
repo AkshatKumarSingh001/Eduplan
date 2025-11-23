@@ -38,23 +38,33 @@ router.get('/:id', (req, res) => {
 // Create new set
 router.post('/', (req, res) => {
     const { name, subject, grade, difficulty, description } = req.body;
+    
+    // Validation
+    if (!name || !subject || !grade) {
+        return res.status(400).json({ error: 'Name, subject, and grade are required' });
+    }
+    
     const id = uuidv4();
+    const finalDifficulty = difficulty || 'medium';
+    const finalDescription = description || '';
 
     const sql = `INSERT INTO sets (id, name, subject, grade, difficulty, description) 
                VALUES (?, ?, ?, ?, ?, ?)`;
 
-    db.run(sql, [id, name, subject, grade, difficulty, description], function (err) {
+    db.run(sql, [id, name, subject, grade, finalDifficulty, finalDescription], function (err) {
         if (err) {
+            console.error('Database error creating set:', err);
             return res.status(500).json({ error: err.message });
         }
 
+        console.log('Set created successfully:', id);
         res.status(201).json({
             id,
             name,
             subject,
             grade,
-            difficulty,
-            description,
+            difficulty: finalDifficulty,
+            description: finalDescription,
             created_at: new Date().toISOString()
         });
     });
