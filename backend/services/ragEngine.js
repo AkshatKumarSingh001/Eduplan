@@ -9,10 +9,8 @@ const { QA_SYSTEM_PROMPT, generateQAPrompt, generateHeadlinePrompt, HEADLINE_SYS
 
 class RAGEngine {
     constructor() {
-        // Initialize vector store
-        vectorStore.initializeCollection().catch(err => {
-            console.error('Failed to initialize vector store:', err);
-        });
+        // Vector store is automatically initialized when imported
+        console.log('RAG Engine initialized with Gemini embeddings');
     }
 
     /**

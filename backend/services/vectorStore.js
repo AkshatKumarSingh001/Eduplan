@@ -1,265 +1,102 @@
-// ChromaDB Vector Store Integration
-// Handles vector storage and semantic similarity search
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-const { ChromaClient } = require('chromadb');
-const { generateEmbedding, cosineSimilarity } = require('../utils/embeddings');
-require('dotenv').config();
+// Initialize Google Gemini
+// Make sure you have GEMINI_API_KEY in your .env and Render Environment Variables
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: "embedding-001" });
 
-const CHROMA_PATH = process.env.CHROMA_PATH || 'http://localhost:8000';
-const COLLECTION_NAME = process.env.CHROMA_COLLECTION || 'document_embeddings';
+// Connect to SQLite
+const dbPath = path.join(__dirname, '../../database.sqlite');
+const db = new sqlite3.Database(dbPath);
 
-// Initialize ChromaDB client (optional - will gracefully fail if not available)
-let client = null;
-try {
-    client = new ChromaClient({ path: CHROMA_PATH });
-} catch (error) {
-    console.warn('ChromaDB client initialization skipped:', error.message);
+// 1. Initialize Table
+db.serialize(() => {
+    db.run(`
+        CREATE TABLE IF NOT EXISTS document_vectors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            content TEXT,
+            metadata TEXT,
+            embedding TEXT
+        )
+    `);
+});
+
+// Helper: Cosine Similarity
+function cosineSimilarity(vecA, vecB) {
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < vecA.length; i++) {
+        dotProduct += vecA[i] * vecB[i];
+        normA += vecA[i] * vecA[i];
+        normB += vecB[i] * vecB[i];
+    }
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-let collection = null;
-
-/**
- * Initialize ChromaDB collection
- * @returns {Promise<void>}
- */
-async function initializeCollection() {
-    // Skip if client is not available
-    if (!client) {
-        console.warn('ChromaDB client not available, skipping collection initialization');
-        return;
+// 2. Add Documents (Using Gemini Embeddings)
+async function addDocuments(texts, metadatas) {
+    console.log(`Generating Gemini embeddings for ${texts.length} documents...`);
+    
+    // Generate Embeddings loop
+    const embeddings = [];
+    for (const text of texts) {
+        // Gemini generates embeddings one by one (or in small batches)
+        const result = await model.embedContent(text);
+        const vector = result.embedding.values;
+        embeddings.push(vector);
     }
 
-    try {
-        // Try to get existing collection
-        collection = await client.getOrCreateCollection({
-            name: COLLECTION_NAME,
-            metadata: { description: 'Document chunk embeddings for RAG system' }
+    // Insert into SQLite
+    const stmt = db.prepare("INSERT INTO document_vectors (content, metadata, embedding) VALUES (?, ?, ?)");
+    
+    db.serialize(() => {
+        db.run("BEGIN TRANSACTION");
+        texts.forEach((text, i) => {
+            stmt.run(text, JSON.stringify(metadatas[i]), JSON.stringify(embeddings[i]));
         });
-
-        console.log(`ChromaDB collection "${COLLECTION_NAME}" initialized`);
-    } catch (error) {
-        console.error('Error initializing ChromaDB collection:', error);
-        // Don't throw - just log the error and continue
-        collection = null;
-    }
-}
-
-/**
- * Add document chunks with embeddings to ChromaDB
- * @param {Array} chunks - Array of chunk objects with id, text, metadata, and embedding
- * @returns {Promise<void>}
- */
-async function addChunks(chunks) {
-    if (!collection) {
-        await initializeCollection();
-    }
-
-    // If still no collection, skip ChromaDB and just return
-    if (!collection) {
-        console.warn('ChromaDB not available, skipping addChunks');
-        return;
-    }
-
-    try {
-        const ids = chunks.map(chunk => chunk.id.toString());
-        const embeddings = chunks.map(chunk => chunk.embedding);
-        const documents = chunks.map(chunk => chunk.text);
-        const metadatas = chunks.map(chunk => ({
-            document_id: chunk.document_id,
-            set_id: chunk.set_id,
-            chunk_index: chunk.chunk_index,
-            ...chunk.metadata
-        }));
-
-        await collection.add({
-            ids,
-            embeddings,
-            documents,
-            metadatas
-        });
-
-        console.log(`Added ${chunks.length} chunks to ChromaDB`);
-    } catch (error) {
-        console.error('Error adding chunks to ChromaDB:', error);
-        // Don't throw - just log and continue
-    }
-}
-
-/**
- * Search for similar chunks using semantic similarity
- * @param {string} query - Search query
- * @param {number} topK - Number of results to return
- * @param {Object} filter - Optional metadata filter
- * @returns {Promise<Array>} - Array of similar chunks with scores
- */
-async function searchSimilar(query, topK = 10, filter = null) {
-    if (!collection) {
-        await initializeCollection();
-    }
-
-    // If still no collection, return empty array
-    if (!collection) {
-        console.warn('ChromaDB not available, returning empty results');
-        return [];
-    }
-
-    try {
-        // Generate embedding for query
-        const queryEmbedding = await generateEmbedding(query);
-
-        // Search in ChromaDB
-        const results = await collection.query({
-            queryEmbeddings: [queryEmbedding],
-            nResults: topK,
-            where: filter
-        });
-
-        // Format results
-        const formattedResults = [];
-        if (results.ids && results.ids[0]) {
-            for (let i = 0; i < results.ids[0].length; i++) {
-                formattedResults.push({
-                    id: results.ids[0][i],
-                    document: results.documents[0][i],
-                    metadata: results.metadatas[0][i],
-                    distance: results.distances[0][i],
-                    similarity: 1 - results.distances[0][i] // Convert distance to similarity
-                });
-            }
-        }
-
-        return formattedResults;
-    } catch (error) {
-        console.error('Error searching ChromaDB:', error);
-        return []; // Return empty array instead of throwing
-    }
-}
-
-/**
- * Search with metadata filtering
- * @param {string} query - Search query
- * @param {string} setId - Filter by set ID
- * @param {number} topK - Number of results
- * @returns {Promise<Array>} - Filtered search results
- */
-async function searchBySet(query, setId, topK = 10) {
-    const filter = { set_id: setId };
-    return searchSimilar(query, topK, filter);
-}
-
-/**
- * Get all chunks for a specific document
- * @param {string} documentId - Document ID
- * @returns {Promise<Array>} - All chunks from the document
- */
-async function getDocumentChunks(documentId) {
-    if (!collection) {
-        await initializeCollection();
-    }
-
-    try {
-        const results = await collection.get({
-            where: { document_id: documentId }
-        });
-
-        return results.documents.map((doc, i) => ({
-            id: results.ids[i],
-            document: doc,
-            metadata: results.metadatas[i]
-        }));
-    } catch (error) {
-        console.error('Error getting document chunks:', error);
-        throw error;
-    }
-}
-
-/**
- * Delete chunks by document ID
- * @param {string} documentId - Document ID
- * @returns {Promise<void>}
- */
-async function deleteDocumentChunks(documentId) {
-    if (!collection) {
-        await initializeCollection();
-    }
-
-    try {
-        await collection.delete({
-            where: { document_id: documentId }
-        });
-
-        console.log(`Deleted chunks for document ${documentId}`);
-    } catch (error) {
-        console.error('Error deleting chunks:', error);
-        throw error;
-    }
-}
-
-/**
- * Get collection statistics
- * @returns {Promise<Object>} - Collection stats
- */
-async function getStats() {
-    if (!collection) {
-        await initializeCollection();
-    }
-
-    try {
-        const count = await collection.count();
-        return {
-            totalChunks: count,
-            collectionName: COLLECTION_NAME
-        };
-    } catch (error) {
-        console.error('Error getting stats:', error);
-        throw error;
-    }
-}
-
-/**
- * Hybrid search combining semantic and keyword search
- * @param {string} query - Search query
- * @param {number} topK - Number of results
- * @param {Object} filter - Optional metadata filter
- * @returns {Promise<Array>} - Hybrid search results
- */
-async function hybridSearch(query, topK = 10, filter = null) {
-    // Get semantic search results
-    const semanticResults = await searchSimilar(query, topK * 2, filter);
-
-    // Simple keyword matching for hybrid approach
-    const keywords = query.toLowerCase().split(' ').filter(w => w.length > 3);
-
-    // Re-rank based on both semantic similarity and keyword matches
-    const rankedResults = semanticResults.map(result => {
-        const doc = result.document.toLowerCase();
-        const keywordScore = keywords.reduce((score, keyword) => {
-            return score + (doc.includes(keyword) ? 1 : 0);
-        }, 0) / keywords.length;
-
-        // Combine semantic similarity (70%) and keyword matching (30%)
-        const hybridScore = (result.similarity * 0.7) + (keywordScore * 0.3);
-
-        return {
-            ...result,
-            hybridScore,
-            keywordScore
-        };
+        db.run("COMMIT");
     });
-
-    // Sort by hybrid score and return top K
-    return rankedResults
-        .sort((a, b) => b.hybridScore - a.hybridScore)
-        .slice(0, topK);
+    
+    stmt.finalize();
+    console.log("Documents saved to SQLite.");
 }
 
-module.exports = {
-    initializeCollection,
-    addChunks,
-    searchSimilar,
-    searchBySet,
-    getDocumentChunks,
-    deleteDocumentChunks,
-    getStats,
-    hybridSearch
-};
+// 3. Search (Using Gemini Embeddings)
+async function similaritySearch(query, k = 4) {
+    console.log(`Searching for: "${query}"`);
+
+    // 1. Get embedding for the QUESTION
+    const result = await model.embedContent(query);
+    const queryEmbedding = result.embedding.values;
+
+    // 2. Fetch and Compare
+    return new Promise((resolve, reject) => {
+        db.all("SELECT content, metadata, embedding FROM document_vectors", [], (err, rows) => {
+            if (err) return reject(err);
+
+            if (!rows || rows.length === 0) {
+                return resolve([]);
+            }
+
+            const scoredRows = rows.map(row => {
+                const docEmbedding = JSON.parse(row.embedding);
+                const score = cosineSimilarity(queryEmbedding, docEmbedding);
+                return {
+                    pageContent: row.content,
+                    metadata: JSON.parse(row.metadata),
+                    score: score
+                };
+            });
+
+            scoredRows.sort((a, b) => b.score - a.score);
+            const topResults = scoredRows.slice(0, k);
+
+            resolve(topResults);
+        });
+    });
+}
+
+module.exports = { addDocuments, similaritySearch };

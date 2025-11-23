@@ -124,13 +124,21 @@ class DocumentProcessor {
                     }
 
                     try {
-                        // Store in ChromaDB for vector search
-                        await vectorStore.addChunks(chromaChunks);
-                        console.log(`Stored ${chromaChunks.length} chunks in ChromaDB`);
+                        // Store in vectorStore with Gemini embeddings
+                        const texts = chromaChunks.map(c => c.text);
+                        const metadatas = chromaChunks.map(c => ({
+                            document_id: c.document_id,
+                            set_id: c.set_id,
+                            chunk_index: c.chunk_index,
+                            source: c.metadata.source
+                        }));
+                        
+                        await vectorStore.addDocuments(texts, metadatas);
+                        console.log(`Stored ${chromaChunks.length} chunks with Gemini embeddings`);
                         resolve();
                     } catch (vectorError) {
-                        console.error('Error storing in ChromaDB:', vectorError);
-                        // Don't fail the whole operation if ChromaDB fails
+                        console.error('Error storing vectors:', vectorError);
+                        // Don't fail the whole operation if vector storage fails
                         // SQLite storage is still successful
                         resolve();
                     }
@@ -143,8 +151,9 @@ class DocumentProcessor {
 
     async deleteDocument(documentId) {
         try {
-            // Delete from ChromaDB
-            await vectorStore.deleteDocumentChunks(documentId);
+            // Note: Vector deletion would need to be implemented in vectorStore
+            // For now, we'll just delete from SQLite
+            console.log(`Deleting document ${documentId} (vector cleanup not yet implemented)`);
 
             // Delete from SQLite
             return new Promise((resolve, reject) => {
