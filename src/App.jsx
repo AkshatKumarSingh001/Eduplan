@@ -76,7 +76,7 @@ function App() {
     const handleNodeClick = async (node) => {
         // Fetch complete set data from backend
         try {
-            const response = await fetch(`http://localhost:5000/api/sets/${node.id}`);
+            const response = await fetch(`https://eduplanai.onrender.com/api/sets/${node.id}`);
             if (response.ok) {
                 const setData = await response.json();
                 setSelectedNode(setData);
